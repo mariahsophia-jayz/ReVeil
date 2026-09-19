@@ -1,7 +1,3 @@
-<div align="center">
-
-<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&height=180&color=gradient&text=Ironveil&fontAlign=50&fontAlignY=35&fontSize=42&desc=Lua%20Obfuscation%20Engine%20•%20AST%20Transformations%20•%20Control%20Flow%20Hardening&descAlign=50&descAlignY=60" />
-
 </div>
 
 <p align="center">
