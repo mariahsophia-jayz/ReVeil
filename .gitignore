@@ -1,0 +1,22 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
+.DS_Store
+coverage/
+tmp/
+out/
+*.reveil.lua
+*.reveil.js
+*.reveil.py
+examples/generated/
+
+# ReVeil build / benchmark artifacts
+.bench-out/
+
+# Discord bot state (access grants)
+data/
+tests/lua/__failures__/
