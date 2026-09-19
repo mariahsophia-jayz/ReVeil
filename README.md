@@ -72,19 +72,39 @@ with no `preset` option.
 
 ## 🤖 Discord bot
 
-The bot is **Lua-only**: it accepts `.lua` / `.luau` attachments or inline source
-and nothing else. It asks for no privileged intents — only `Guilds` — and replies
-with an ephemeral attachment unless `share: true` is passed.
+The bot is **Lua-only** — it accepts `.lua` / `.luau` attachments or inline source
+and nothing else — and it is **private**: out of the box only the owner can use it.
+It asks for no privileged intents (only `Guilds`) and replies with an ephemeral
+attachment unless `share: true` is passed. Every command, owner commands included,
+works in DMs.
 
 ```bash
 export DISCORD_TOKEN=...            # bot token
 export DISCORD_CLIENT_ID=...        # application id
+# export REVEIL_OWNER_ID=1380042914922758224   # defaults to this id
 
 npm run bot:deploy -- --guild 123456789012345678   # register the commands (instant)
 npm run bot                                        # start the gateway client
 ```
 
-`/obfuscate` options:
+### Access
+
+Nobody but the owner can run `/obfuscate` until the owner opens it up. Grants are
+kept in `data/access.json` (path: `REVEIL_ACCESS_FILE`) and survive restarts.
+
+| Command | Who | What it does |
+| --- | --- | --- |
+| `/give-access <user>` | owner | that user may run `/obfuscate` anywhere, DMs included |
+| `/take-access <user>` | owner | removes that user's access |
+| `/access-channel <channel>` | owner | everyone in that one channel may run `/obfuscate` |
+| `/remove-channel <channel>` | owner | closes that channel again |
+| `/access-list` | owner | shows the owner, granted users and open channels |
+
+A granted user gets `/obfuscate` only — never the access commands. A channel grant
+is scoped to that channel: it does not follow the user elsewhere and it does not
+open DMs. Anyone denied gets an ephemeral refusal, so the channel sees nothing.
+
+### `/obfuscate` options
 
 | Option | Type | Notes |
 | --- | --- | --- |

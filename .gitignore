@@ -16,4 +16,7 @@ examples/generated/
 
 # ReVeil build / benchmark artifacts
 .bench-out/
+
+# Discord bot state (access grants)
+data/
 tests/lua/__failures__/

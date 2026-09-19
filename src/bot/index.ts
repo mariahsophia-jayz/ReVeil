@@ -7,8 +7,16 @@
  * `/presets`, and streams nothing back to the channel — the obfuscated script is
  * uploaded as an ephemeral attachment unless the invoker passes `share: true`.
  *
+ * The bot is **private**. Only the owner may use it until the owner opens it up
+ * with `/give-access <user>` (one account, servers and DMs) or
+ * `/access-channel <channel>` (everyone in that channel). `/take-access` and
+ * `/remove-channel` close those again; `/access-list` shows the current state.
+ * All five access commands are owner-only, and every command works in DMs.
+ *
  * Environment:
- *   DISCORD_TOKEN           required, bot token
+ *   DISCORD_TOKEN            required, bot token
+ *   REVEIL_OWNER_ID          optional, owner snowflake (default 1380042914922758224)
+ *   REVEIL_ACCESS_FILE       optional, access store path (default data/access.json)
  *   DISCORD_MAX_OUTPUT_BYTES optional, overrides the 8 MiB attachment ceiling
  *
  * Register the commands first with `npm run bot:deploy`.
@@ -27,12 +35,28 @@ import {
 import { PRESET_DESCRIPTIONS, PRESET_NAMES } from "../core/presets";
 import { REVEIL_VERSION } from "../index";
 import {
+  accessChannelCommand,
+  accessListCommand,
   DEFAULT_BOT_PRESET,
+  giveAccessCommand,
   MAX_INPUT_BYTES,
   MAX_OUTPUT_BYTES,
   obfuscateCommand,
   presetsCommand,
+  removeChannelCommand,
+  takeAccessCommand,
 } from "./commands";
+import {
+  accessFilePath,
+  authorizeObfuscate,
+  canManageAccess,
+  grantChannel,
+  grantUser,
+  ownerId,
+  readAccess,
+  revokeChannel,
+  revokeUser,
+} from "./access";
 import { handleObfuscate, isLuaFilename } from "./obfuscate";
 
 const ACCENT = 0x6e56cf;
@@ -45,6 +69,41 @@ function outputLimit(): number {
 
 function banner(): EmbedBuilder {
   return new EmbedBuilder().setColor(ACCENT).setFooter({ text: `ReVeil v${REVEIL_VERSION}` });
+}
+
+/** Denies quietly: the refusal is ephemeral, so the channel sees nothing. */
+async function replyPrivate(interaction: ChatInputCommandInteraction, title: string, description: string): Promise<void> {
+  await interaction.reply({
+    embeds: [banner().setTitle(title).setDescription(description.slice(0, 4000))],
+    flags: MessageFlags.Ephemeral,
+  });
+}
+
+/** Gate for `/obfuscate` and `/presets`. Returns false (and replies) when denied. */
+async function guardUsage(interaction: ChatInputCommandInteraction): Promise<boolean> {
+  const decision = authorizeObfuscate({
+    userId: interaction.user.id,
+    channelId: interaction.inGuild() ? interaction.channelId : null,
+    inGuild: interaction.inGuild(),
+  });
+  if (decision.allowed) {
+    return true;
+  }
+  await replyPrivate(interaction, "Access denied", decision.detail);
+  return false;
+}
+
+/** Gate for the five owner-only access commands. */
+async function guardOwner(interaction: ChatInputCommandInteraction): Promise<boolean> {
+  if (canManageAccess(interaction.user.id)) {
+    return true;
+  }
+  await replyPrivate(
+    interaction,
+    "Owner only",
+    `\`${interaction.commandName}\` is restricted to the owner of this bot.`,
+  );
+  return false;
 }
 
 async function readAttachment(url: string, name: string): Promise<string> {
@@ -60,6 +119,10 @@ async function readAttachment(url: string, name: string): Promise<string> {
 }
 
 async function runObfuscate(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!(await guardUsage(interaction))) {
+    return;
+  }
+
   const file = interaction.options.getAttachment("file");
   const inline = interaction.options.getString("code");
   const preset = interaction.options.getString("preset");
@@ -141,6 +204,9 @@ async function runObfuscate(interaction: ChatInputCommandInteraction): Promise<v
 }
 
 async function runPresets(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!(await guardUsage(interaction))) {
+    return;
+  }
   const embed = banner()
     .setTitle("ReVeil presets")
     .setDescription(`\`/obfuscate\` with no preset uses **${DEFAULT_BOT_PRESET}**.`)
@@ -153,30 +219,166 @@ async function runPresets(interaction: ChatInputCommandInteraction): Promise<voi
   await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 }
 
+/** Best-effort `name (id)` labels for `/access-list`; falls back to the bare id. */
+async function labelUser(interaction: ChatInputCommandInteraction, id: string): Promise<string> {
+  try {
+    const user = await interaction.client.users.fetch(id);
+    return `${user.tag} (\`${id}\`)`;
+  } catch {
+    return `\`${id}\``;
+  }
+}
+
+async function labelChannel(interaction: ChatInputCommandInteraction, id: string): Promise<string> {
+  try {
+    const channel = await interaction.client.channels.fetch(id);
+    const name = (channel as { name?: string } | null)?.name;
+    return name ? `#${name} (\`${id}\`)` : `\`${id}\``;
+  } catch {
+    return `\`${id}\``;
+  }
+}
+
+async function runGiveAccess(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!(await guardOwner(interaction))) {
+    return;
+  }
+  const user = interaction.options.getUser("user", true);
+  const { changed } = grantUser(user.id);
+  await replyPrivate(
+    interaction,
+    changed ? "Access granted" : "Already had access",
+    `${user} (\`${user.id}\`) can now run \`/obfuscate\` — in servers and in DMs.` +
+      (changed ? "" : " Nothing changed."),
+  );
+}
+
+async function runTakeAccess(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!(await guardOwner(interaction))) {
+    return;
+  }
+  const user = interaction.options.getUser("user", true);
+  const { changed } = revokeUser(user.id);
+  await replyPrivate(
+    interaction,
+    changed ? "Access removed" : "No access to remove",
+    changed
+      ? `${user} (\`${user.id}\`) can no longer run \`/obfuscate\`.`
+      : `${user} (\`${user.id}\`) was not on the access list.`,
+  );
+}
+
+async function runAccessChannel(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!(await guardOwner(interaction))) {
+    return;
+  }
+  if (!interaction.inGuild()) {
+    await replyPrivate(
+      interaction,
+      "Servers only",
+      "`/access-channel` opens a server channel. Use `/give-access` to allow someone in DMs.",
+    );
+    return;
+  }
+  const channel = interaction.options.getChannel("channel", true);
+  const { changed } = grantChannel(channel.id);
+  await replyPrivate(
+    interaction,
+    changed ? "Channel opened" : "Already open",
+    `Everyone in ${channel} can now run \`/obfuscate\` in that channel.` + (changed ? "" : " Nothing changed."),
+  );
+}
+
+async function runRemoveChannel(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!(await guardOwner(interaction))) {
+    return;
+  }
+  if (!interaction.inGuild()) {
+    await replyPrivate(interaction, "Servers only", "`/remove-channel` closes a server channel.");
+    return;
+  }
+  const channel = interaction.options.getChannel("channel", true);
+  const { changed } = revokeChannel(channel.id);
+  await replyPrivate(
+    interaction,
+    changed ? "Channel closed" : "Was not open",
+    changed
+      ? `${channel} is closed again — only the owner and granted users can run \`/obfuscate\` there now.`
+      : `${channel} was not on the open-channel list.`,
+  );
+}
+
+async function runAccessList(interaction: ChatInputCommandInteraction): Promise<void> {
+  if (!(await guardOwner(interaction))) {
+    return;
+  }
+  const state = readAccess();
+  const users = await Promise.all(state.users.map((id) => labelUser(interaction, id)));
+  const channels = await Promise.all(state.channels.map((id) => labelChannel(interaction, id)));
+
+  const embed = banner()
+    .setTitle("ReVeil access")
+    .setDescription(`Owner: \`${ownerId()}\``)
+    .addFields(
+      {
+        name: `Users with /obfuscate (${users.length})`,
+        value: users.length > 0 ? users.join("\n").slice(0, 1024) : "_nobody_",
+      },
+      {
+        name: `Open channels (${channels.length})`,
+        value: channels.length > 0 ? channels.join("\n").slice(0, 1024) : "_none_",
+      },
+      {
+        name: "Commands",
+        value:
+          "`/give-access` and `/take-access` per user, `/access-channel` and " +
+          "`/remove-channel` per channel. Everyone else is denied.",
+      },
+    );
+  await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+}
+
 export function createClient(): Client {
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
   client.once(Events.ClientReady, (ready) => {
     console.log(`ReVeil bot v${REVEIL_VERSION} online as ${ready.user.tag}`);
-    ready.user.setActivity(`/obfuscate • preset ${DEFAULT_BOT_PRESET}`, { type: 3 });
+    console.log(`owner: ${ownerId()} — access store: ${accessFilePath()}`);
+    ready.user.setActivity(`/obfuscate • private`, { type: 3 });
   });
 
   client.on(Events.InteractionCreate, (interaction) => {
     if (!interaction.isChatInputCommand()) {
       return;
     }
-    if (interaction.commandName === obfuscateCommand.name) {
-      void runObfuscate(interaction);
-      return;
+    switch (interaction.commandName) {
+      case obfuscateCommand.name:
+        void runObfuscate(interaction);
+        return;
+      case presetsCommand.name:
+        void runPresets(interaction);
+        return;
+      case giveAccessCommand.name:
+        void runGiveAccess(interaction);
+        return;
+      case takeAccessCommand.name:
+        void runTakeAccess(interaction);
+        return;
+      case accessChannelCommand.name:
+        void runAccessChannel(interaction);
+        return;
+      case removeChannelCommand.name:
+        void runRemoveChannel(interaction);
+        return;
+      case accessListCommand.name:
+        void runAccessList(interaction);
+        return;
+      default:
+        void interaction.reply({
+          content: `Unknown command \`${interaction.commandName}\`.`,
+          flags: MessageFlags.Ephemeral,
+        });
     }
-    if (interaction.commandName === presetsCommand.name) {
-      void runPresets(interaction);
-      return;
-    }
-    void interaction.reply({
-      content: `Unknown command \`${interaction.commandName}\`.`,
-      flags: MessageFlags.Ephemeral,
-    });
   });
 
   client.on(Events.Error, (error) => {
