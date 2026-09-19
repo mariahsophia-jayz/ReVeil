@@ -5,6 +5,8 @@
  * Runs every check that does not need network access:
  *   1. payload round-trip  — serialiser/parser agree on the wire format
  *   2. Lua corpora         — reference Lua vs every preset and seed
+ *   3. CLI                 — dist/cli.js end to end, payloads executed
+ *   4. Discord bot         — /obfuscate payload + handler (extreme by default)
  *
  * Usage: node tests/run-all.js [preset,preset] [seed,seed]
  */
@@ -19,6 +21,8 @@ const seeds = process.argv[3] || process.env.REVEIL_TEST_SEEDS || "12345,777";
 const steps = [
   { name: "payload round-trip", file: "tests/tools/payload-roundtrip.js", env: {} },
   { name: "lua corpus", file: "tests/lua/run-lua-tests.js", env: { REVEIL_TEST_PRESETS: presets, REVEIL_TEST_SEEDS: seeds } },
+  { name: "cli", file: "tests/cli/run-cli-tests.js", env: {} },
+  { name: "discord bot", file: "tests/bot/run-bot-tests.js", env: {} },
 ];
 
 let failed = 0;
