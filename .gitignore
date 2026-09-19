@@ -14,5 +14,6 @@ out/
 *.reveil.py
 examples/generated/
 
-# ReVeil test artifacts
+# ReVeil build / benchmark artifacts
+.bench-out/
 tests/lua/__failures__/

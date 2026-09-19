@@ -1,81 +1,209 @@
 <div align="center">
 
-<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&height=180&color=gradient&text=Ironveil&fontAlign=50&fontAlignY=35&fontSize=42&desc=Lua%20Obfuscation%20Engine%20•%20AST%20Transformations%20•%20Control%20Flow%20Hardening&descAlign=50&descAlignY=60" />
+<img width="100%" src="https://capsule-render.vercel.app/api?type=waving&height=180&color=gradient&text=ReVeil&fontAlign=50&fontAlignY=35&fontSize=42&desc=Lua%20Obfuscation%20Engine%20%E2%80%A2%20Self-decoding%20VM%20%E2%80%A2%20CLI%20%2B%20Discord%20Bot&descAlign=50&descAlignY=60" />
 
 </div>
 
 <p align="center">
-<b>Ironveil is a Lua obfuscation engine built on AST transformations, designed to restructure and harden source code against reverse engineering.</b>
+<b>ReVeil is a Lua/Luau obfuscation engine. Source is lowered to ReVeil bytecode and shipped with a self-decoding VM that decrypts, verifies and interprets the payload at runtime.</b>
 </p>
 
 ---
 
 ## ⚙️ Features
 
-- AST-based transformation pipeline
-- Control flow restructuring
-- String / constant encoding layer
-- Dead code injection system
-- Variable rewriting / virtualization
-- Lua 5.1 / LuaJIT support
+- Full Lua/Luau front end: lexer → parser → scope resolver → bytecode compiler
+- Self-decoding VM: the payload is encrypted, chunked and reassembled at runtime
+- Identifier renaming, encrypted string vault, encoded numeric constants
+- Dead-code injection, opaque predicates, control-flow flattening, expression fracturing
+- Decoy protos, payload integrity checks and anti-tamper guards
+- Four presets plus per-transform toggles; a seed reproduces a build byte for byte
+- `reveil` CLI and a Lua-only Discord bot whose `/obfuscate` defaults to `extreme`
+- Lua 5.1–5.4 / LuaJIT / Luau in, portable Lua out
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick start
 
 ```bash
-git clone https://github.com/memcpython/ironveil.git
-cd ironveil
+git clone https://github.com/mariahsophia-jayz/ReVeil.git
+cd ReVeil
 npm install
 npm run build
-node dist/cli.js <input.lua|input.luau> [output.lua]
+
+node dist/cli.js examples/source.lua            # -> examples/source.reveil.lua
+node dist/cli.js game.lua -p heavy -o build/game.lua
 ```
+
+## 🖥️ CLI
+
+```
+reveil [options] <input.lua|input.luau> [more inputs...]
+reveil [options] --stdin
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `-o, --output <file>` | write to `<file>` (single input only) |
+| `--stdout` | write the payload to stdout, status to stderr |
+| `--stdin` | read the source from stdin |
+| `-p, --preset <name>` | `light` \| `medium` \| `heavy` \| `extreme` (default `extreme`) |
+| `-s, --seed <value>` | number or text; the same seed reproduces the output |
+| `-t, --target <dialect>` | `5.1`–`5.4`, `luajit`, `luau`, `universal` |
+| `-w, --watermark <text>` | extra text in the banner comment |
+| `--set <toggle>=<on\|off>` | override one transform on top of the preset |
+| `--max-bytes <n>` | fail instead of writing files larger than `n` bytes |
+| `--stats` | print transform statistics |
+| `--presets` | list the presets |
+
+Without `--output` the result lands next to the input as `<name>.reveil.lua`.
+
+## 🎚️ Presets
+
+| Preset | What it enables |
+| --- | --- |
+| `light` | renamed identifiers, encrypted strings, minified — fastest at runtime |
+| `medium` | light + encoded numbers and dead-code injection |
+| `heavy` | medium + control-flow flattening and the bytecode VM |
+| `extreme` | everything: VM, decoys, integrity checks, anti-tamper — **the default** |
+
+`extreme` is the default everywhere: `reveil` with no `--preset`, and `/obfuscate`
+with no `preset` option.
+
+## 🤖 Discord bot
+
+The bot is **Lua-only**: it accepts `.lua` / `.luau` attachments or inline source
+and nothing else. It asks for no privileged intents — only `Guilds` — and replies
+with an ephemeral attachment unless `share: true` is passed.
+
+```bash
+export DISCORD_TOKEN=...            # bot token
+export DISCORD_CLIENT_ID=...        # application id
+
+npm run bot:deploy -- --guild 123456789012345678   # register the commands (instant)
+npm run bot                                        # start the gateway client
+```
+
+`/obfuscate` options:
+
+| Option | Type | Notes |
+| --- | --- | --- |
+| `file` | attachment | a `.lua` / `.luau` file |
+| `code` | string | inline source, up to 6000 characters |
+| `preset` | choice | `light` / `medium` / `heavy` / `extreme` — defaults to **extreme** |
+| `seed` | string | number or text; the same seed reproduces the output |
+| `target` | choice | Lua dialect, defaults to `universal` |
+| `share` | boolean | post the result publicly instead of ephemerally |
+
+`/presets` lists the four presets and what each one enables.
+
 ## 📥 Example
 
-### Input
+### Input — `examples/source.lua`
 
 ```lua
--- input.lua
-print("Hello, World!");
+local Inventory = {}
+Inventory.__index = Inventory
+
+function Inventory.new(owner, capacity)
+  return setmetatable({ owner = owner, capacity = capacity, items = {} }, Inventory)
+end
+
+function Inventory:add(name, amount)
+  local used = 0
+  for _ in pairs(self.items) do
+    used = used + 1
+  end
+  if used >= self.capacity then
+    return false, "inventory full"
+  end
+  self.items[name] = (self.items[name] or 0) + amount
+  return true
+end
+
+function Inventory:total()
+  local sum = 0
+  for _, amount in pairs(self.items) do
+    sum = sum + amount
+  end
+  return sum
+end
+
+local function fib(n)
+  if n < 2 then
+    return n
+  end
+  return fib(n - 1) + fib(n - 2)
+end
+
+local bag = Inventory.new("mara", 4)
+print(bag:add("rope", 1), bag:add("torch", 2), bag:add("coins", 30))
+print(bag.owner, bag:total(), fib(12))
 ```
 
-### Obfuscated output
+### Output — `example.lua` (first bytes of 17 KB)
 
 ```lua
--- input.obfuscated.lua
-return(function(...)return(function(...)local S,a,l,O,d,f,N,C,P,V,n,g,Z g={}Z={}g[1]=table.concat g[2]=table.insert g[3]=table.unpack or unpack g[4]=string.byte g[5]=string.char g[6]=string.sub g[7]=tonumber g[8]=type g[9]=rawget Z[1]=nil Z[2]={}Z[3]={}Z[4]={}Z[5]={}Z[6]={}Z[7]={}Z[8]={}Z[9]={}Z[12]=1 Z[13]=0 a={}l=nil O=nil Z[15]={}Z[16]=setmetatable({},{__mode="k"})Z[17]={}Z[18]=nil g[10]=function(U,L,r)return{[("l".."")]={},[("p".."")]=U,[("g".."")]=L,[("v".."")]=r or{[("n".."")]=0}}end g[11]=function(U)local L=Z[15][U]if L==nil then return U end return L end Z[17]={__len=function(U)return Z[16][U]or 0 end}g[13]=function(U,L)Z[16][U]=L return setmetatable(U,Z[17])end g[14]=function(U,L,r)local y=g[11](L)U[("l".."")][y]=r==nil and Z[2]or r end g[15]=function(U,L)local r=g[11](L)local y=U while y do local i=g[9](y[("l".."")],r)if i~=nil then if i==Z[2]then return nil,true end return i,true end y=y[("p".."")]end return nil,false end g[16]=function(U,L,r)local y=g[11](L)local i=U while i do local v=g[9](i[("l".."")],y)if v~=nil then i[("l".."")][y]=r==nil and Z[2]or r return end i=i[("p".."")]end U[("g".."")][y]=r end g[17]=function(U,L)local r=g[11](L)local y,i=g[15](U,L)if i then return y end return U[("g".."")][r]end g[12]=function(U,L)local r={}local y=0 for i=1,#U do local v=U[i]local w=v[1]if w==1 then y=y+1 local k=g[17](L,v[2])if k==nil then k=Z[2]end r[y]=k elseif w==2 then y=y+1 r[y]=g[51](v[2])elseif w==3 then y=y+1 r[y]=v[2]elseif w==4 then y=y+1 r[y]=v[2]==1 elseif w==5 then y=y+1 r[y]=Z[2]elseif w==6 then local k=r[y]if k==Z[2]then k=nil end local a=k[g[11](v[2])]if a==nil then a=Z[2]end r[y]=a elseif w==7 then local k=r[y]if k==Z[2]then k=nil end local a=r[y-1]if a==Z[2]then a=nil end local l=a[k]if l==nil then l=Z[2]end r[y-1]=l r[y]=nil y=y-1 elseif w==8 then local k=r[y]if k==Z[2]then k=nil end local a if v[2]==1 then a=-k elseif v[2]==2 then a=not k elseif v[2]==3 then a=#k elseif v[2]==4 then a=g[45](k)else error("iv")end if a==nil then a=Z[2]end r[y]=a elseif w==9 then local k=r[y]if k==Z[2]then k=nil end local a=r[y-1]if ...
--- remaining obfuscated output omitted
+--[[
+  ReVeil v2 • 2026-09-19 • preset: extreme
+  Reverse engineering is a breach of the license.
+]]
+return (function(...)
+local dL = _ENV or (getfenv and getfenv(1)) or _G
+local LfI = select
+local lRd = table.concat
+local y = string.byte
+local _N = string.char
+local P = string.sub
+local K = string.find
+local L = math.floor
+local c = type
+local XQO = rawget
+local zt = dL.math or math
+local p = table.unpack or unpack
+local function Viv(...)
+  return {n = LfI("#", ...), ...}
+end
+local h
+local W9
+local function RM(a,
+-- remaining output omitted
 ```
 
-## 🧠 How It Works
+Regenerate it any time:
 
-Ironveil processes Lua code in multiple stages:
+```bash
+node dist/cli.js examples/source.lua -o example.lua --seed 1 --quiet
+```
 
-1. Parsing
+## 🧠 How it works
 
-Source code is converted into an AST (Abstract Syntax Tree).
+1. **Parse** — the Lua/Luau source becomes an AST (`src/lua/lexer.ts`, `parser.ts`).
+2. **Resolve** — scopes, upvalues and call targets are resolved; locals are renamed (`resolve.ts`).
+3. **Compile** — the AST is lowered to ReVeil bytecode protos (`compiler.ts`, `bytecode.ts`).
+4. **Harden** — strings, numbers and control flow are rewritten per preset (`transforms.ts`).
+5. **Emit** — the payload is encrypted and wrapped in the self-decoding VM (`cipher.ts`, `runtime.ts`).
 
-2. Transformation Passes
-control flow rewriting
-variable renaming / virtualization
-expression restructuring
-3. Encoding Layer
-strings and constants are encoded into runtime-decoded values
-4. Code Generation
+The CLI (`src/cli.ts`) and the bot (`src/bot/`) are both thin adapters over the
+same `obfuscate()` entry point in `src/engine.ts`.
 
-The transformed AST is compiled back into executable Lua bytecode-equivalent source.
+## 🧪 Tests
 
-## Ironveil is designed for:
+```bash
+npm test
+```
 
-- code protection
+Runs the payload serialiser round-trip, the Lua corpora (every case in
+`tests/lua/cases` executed as plain Lua and through the VM for every preset and
+seed), the CLI end-to-end suite and the Discord bot suite — both of which execute
+the payloads they produce in a sandboxed Lua 5.4 interpreter.
 
-- intellectual property obfuscation
-
-- anti-analysis research
-
+```bash
+npm run bench    # benchmarks/, verified against a local `lua` when available
+```
 
 ## 📜 License
 
-[IronVeil License](https://github.com/memcpython/ironveil/blob/main/LICENSE)
+[GPL-3.0](LICENSE)
 
 <div align="center"> <img width="100%" src="https://capsule-render.vercel.app/api?type=waving&height=120&section=footer&color=gradient" /> </div>
