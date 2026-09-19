@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
+.DS_Store
+coverage/
+tmp/
+out/
+*.reveil.lua
+*.reveil.js
+*.reveil.py
+examples/generated/
+
+# ReVeil test artifacts
+tests/lua/__failures__/

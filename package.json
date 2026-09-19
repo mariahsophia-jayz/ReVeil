@@ -1,11 +1,40 @@
 {
-  "name": "ironveil",
-  "version": "0.1.0",
+  "name": "reveil",
+  "version": "2.0.0",
   "private": true,
+  "description": "ReVeil — multi-language obfuscation engine (Lua/Luau, JavaScript, Python) with AST hardening, bytecode virtualization and a Discord slash-command bot.",
+  "license": "GPL-3.0",
   "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "reveil": "dist/cli.js",
+    "reveil-bot": "dist/bot/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "build": "node ../node_modules/typescript/bin/tsc -p tsconfig.json",
-    "start": "node ../node_modules/ts-node/dist/bin.js src/cli.ts",
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "start": "node dist/cli.js",
+    "bot": "node dist/bot/index.js",
+    "bot:deploy": "node dist/bot/deploy-commands.js",
+    "test": "npm run build && node tests/run-all.js",
     "bench": "npm run build && node scripts/run-benchmarks.js"
+  },
+  "dependencies": {
+    "acorn": "^8.18.0",
+    "discord.js": "^14.27.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.2",
+    "wasmoon": "^1.16.0"
+  },
+  "engines": {
+    "node": ">=18.17.0"
   }
 }
